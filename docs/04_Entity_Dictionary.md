@@ -31,271 +31,128 @@ Generator Architecture
        ↓
 Python Data Generator
        ↓
-SQL Data Model
+SQL
        ↓
-Tableau Analytics
+Tableau
 ```
 
 The Entity Dictionary defines:
 
-* entities,
+* logical entities,
 * entity purpose,
 * grain,
 * primary keys,
 * foreign keys,
 * important attributes,
 * relationships,
-* business meaning,
-* derived metrics,
-* and implementation notes.
+* business constraints,
+* derived values,
+* and modeling assumptions.
 
-The document is designed to ensure that the Python generator, SQL model, and Tableau analytical layer are based on the same logical data model.
+This document is a **logical data model specification**.
+
+It is not yet a physical database schema.
+
+SQL data types, indexes, partitioning, database constraints, and implementation-specific details will be defined later.
 
 ---
 
 # 2. Modeling Principles
 
-The data model follows several core principles.
+The data model follows the following principles:
 
-## 2.1 Separate Master Data, Events, State, Rules, and Derived Metrics
-
-The model distinguishes between:
-
-```text
-MASTER DATA
-    ↓
-Entities that define the organization
-
-EVENTS
-    ↓
-Things that happen
-
-STATE
-    ↓
-Current or historical operational conditions
-
-RULES / PARAMETERS
-    ↓
-Configuration used by the simulator
-
-DERIVED METRICS
-    ↓
-Values calculated from source data
-```
-
-Examples:
-
-```text
-PATIENT
-DOCTOR
-CLINIC
-SPECIALTY
-ROOM
-```
-
-are master data.
-
-```text
-REFERRAL
-APPOINTMENT
-VISIT
-SERVICE_DELIVERY
-PATIENT_DECISION
-```
-
-are operational events.
-
-```text
-WAITING_LIST_ENTRY
-```
-
-represents an operational state over time.
-
-```text
-PATIENT_BEHAVIOR_RULE
-COMPENSATION_RULE
-```
-
-represent configurable business logic.
-
-```text
-WAITING_TIME
-EFFECTIVE_CAPACITY
-CONTRACT_UTILIZATION
-INTERNAL_CAPTURE_RATE
-EXTERNAL_LEAKAGE_RATE
-```
-
-are derived metrics and should generally not be stored as independent source entities.
-
----
-
-## 2.2 Grain Must Be Explicit
-
-Every fact or event entity must have a clearly defined grain.
-
-Examples:
-
-```text
-One REFERRAL
-= one patient referral event
-
-One APPOINTMENT
-= one scheduled patient appointment
-
-One VISIT
-= one actual patient attendance event
-
-One SERVICE_DELIVERY
-= one delivered healthcare service
-
-One WAITING_LIST_ENTRY
-= one patient episode in a waiting queue
-
-One CAPACITY_FACT
-= one capacity record for a given date / clinic / specialty / service type
-```
-
-This prevents double counting and supports reliable SQL and BI analysis.
-
----
-
-## 2.3 Derived Metrics Are Not Independent Entities
-
-The following should be calculated from source data where possible:
-
-```text
-Waiting Time
-Effective Capacity
-Capacity Utilization
-Contract Utilization
-Remaining Contract Capacity
-Overperformance
-Underutilization
-Internal Capture Rate
-External Leakage Rate
-Non-Completion Rate
-Clinic Revenue
-Net Clinic Result
-```
-
-These metrics may be implemented as SQL views, analytical tables, or Tableau calculations depending on performance requirements.
-
----
-
-## 2.4 Temporal Modeling
-
-The simulator is time-dependent.
-
-Operational events and states must support:
-
-* daily analysis,
-* weekly analysis,
-* monthly analysis,
-* quarterly analysis,
-* annual analysis.
-
-The model therefore uses a centralized:
-
-```text
-DATE_DIMENSION
-```
-
-for consistent analytical aggregation.
+1. Each entity must have a clearly defined business meaning.
+2. Each entity must have an explicit grain.
+3. Each transactional entity represents a specific business event or state.
+4. Master data entities define relatively stable business concepts.
+5. Fact entities capture measurable operational or financial activity.
+6. Derived KPIs should not be duplicated as independent transactional facts unless required for performance.
+7. Time-dependent business rules must be represented with effective dates where necessary.
+8. Historical changes must not overwrite previous business states when historical analysis is required.
+9. The model must support both operational analysis and BI reporting.
+10. The model must support synthetic data generation with deterministic business logic.
+11. The model must distinguish physical capacity from contractual NFZ capacity.
+12. The model must distinguish process status from final business outcome.
+13. Scenario configuration must be separated from actual operational events.
+14. The model must preserve traceability from demand to service delivery and financial outcome.
 
 ---
 
 # 3. Entity Classification
 
-| Entity                          | Type            | Grain                                             |
-| ------------------------------- | --------------- | ------------------------------------------------- |
-| DATE_DIMENSION                  | Dimension       | One calendar date                                 |
-| PATIENT                         | Master          | One patient                                       |
-| CLINIC                          | Master          | One operational clinic                            |
-| SPECIALTY                       | Master          | One medical specialty                             |
-| DOCTOR                          | Master          | One doctor                                        |
-| DOCTOR_CLINIC_ASSIGNMENT        | Relationship    | One doctor-clinic assignment                      |
-| ROOM                            | Master          | One physical room                                 |
-| SERVICE_TYPE                    | Master          | One service definition                            |
-| DOCTOR_SCHEDULE                 | Operational     | One doctor schedule record                        |
-| ROOM_SCHEDULE                   | Operational     | One room availability record                      |
-| PATIENT_VISIT                   | Event           | One primary-care or pediatric visit               |
-| DEMAND_EVENT                    | Event           | One demand event                                  |
-| REFERRAL                        | Event           | One referral                                      |
-| PATIENT_DECISION                | Event           | One patient decision                              |
-| WAITING_LIST_ENTRY              | State/Event     | One waiting episode                               |
-| APPOINTMENT                     | Event           | One scheduled appointment                         |
-| VISIT                           | Event           | One actual attendance event                       |
-| SERVICE_DELIVERY                | Event/Fact      | One delivered healthcare service                  |
-| NFZ_CONTRACT                    | Master/Contract | One contract service line                         |
-| NFZ_CONTRACT_AMENDMENT          | Event           | One contract amendment                            |
-| CAPACITY_FACT                   | Fact            | One date/clinic/specialty/service capacity record |
-| RESOURCE_REALLOCATION           | Event           | One resource reallocation event                   |
-| REVENUE_TRANSACTION             | Fact            | One revenue event                                 |
-| COMPENSATION_RULE               | Rule            | One compensation configuration                    |
-| DOCTOR_COMPENSATION_TRANSACTION | Fact            | One compensation transaction                      |
-| COST_CATEGORY                   | Dimension       | One cost category                                 |
-| OPERATING_COST                  | Fact            | One operating cost transaction                    |
-| SCENARIO                        | Dimension       | One simulation scenario                           |
-| SCENARIO_PARAMETER              | Rule            | One scenario parameter                            |
-| SCENARIO_RESOURCE_CHANGE        | Event           | One scenario resource change                      |
+Entities are classified into the following groups:
+
+## 3.1 Master Data
+
+* PATIENT
+* DOCTOR
+* SPECIALTY
+* CLINIC
+* ROOM
+* SERVICE_TYPE
+* DATE_DIMENSION
+
+## 3.2 Organizational and Availability Structures
+
+* CLINIC_SPECIALTY
+* DOCTOR_SPECIALTY
+
+## 3.3 Demand and Referral
+
+* DEMAND_EVENT
+* PATIENT_VISIT
+* REFERRAL
+* PATIENT_DECISION
+
+## 3.4 Scheduling and Waiting
+
+* WAITING_LIST_ENTRY
+* APPOINTMENT
+* VISIT
+
+## 3.5 Service Delivery
+
+* SERVICE_DELIVERY
+* SERVICE_PRICING
+
+## 3.6 Capacity and Operations
+
+* DOCTOR_SCHEDULE
+* ROOM_SCHEDULE
+* CAPACITY_FACT
+* RESOURCE_REALLOCATION
+
+## 3.7 NFZ and Contracting
+
+* NFZ_CONTRACT
+* NFZ_CONTRACT_AMENDMENT
+
+## 3.8 Revenue and Finance
+
+* REVENUE_TRANSACTION
+* COMPENSATION_RULE
+* DOCTOR_COMPENSATION_TRANSACTION
+* OPERATING_COST
+
+## 3.9 Simulation and Scenarios
+
+* SCENARIO
+* SCENARIO_RESOURCE_CHANGE
+* PATIENT_BEHAVIOR_RULE
 
 ---
 
-# 4. Core Master Data Entities
+# 4. Master Data Entities
 
-## 4.1 DATE_DIMENSION
-
-### Purpose
-
-Central calendar dimension used for consistent time-based analysis.
-
-### Grain
-
-One record per calendar date.
-
-### Primary Key
-
-```text
-date_key
-```
-
-### Attributes
-
-```text
-date_key
-date
-day
-day_of_week
-week_number
-month
-month_name
-quarter
-year
-is_weekend
-```
-
-### Derived / Analytical Use
-
-Supports:
-
-* daily reporting,
-* weekly reporting,
-* monthly reporting,
-* quarterly NFZ settlement,
-* annual analysis.
-
----
-
-## 4.2 PATIENT
+## 4.1 PATIENT
 
 ### Purpose
 
-Represents an individual synthetic patient in the simulated healthcare organization.
+Represents an individual patient participating in the simulated healthcare system.
 
 ### Grain
 
-One record per patient.
+One record per simulated patient.
 
 ### Primary Key
 
@@ -305,43 +162,118 @@ patient_id
 
 ### Attributes
 
-```text
-patient_id
-date_of_birth
-gender
-registration_date
-patient_status
-```
+| Field             | Description                                                     |
+| ----------------- | --------------------------------------------------------------- |
+| patient_id        | Unique patient identifier                                       |
+| date_of_birth     | Patient date of birth                                           |
+| gender            | Simulated patient gender                                        |
+| registration_date | Date patient entered the organization                           |
+| patient_segment   | Optional analytical patient segment                             |
+| active_flag       | Indicates whether patient is active in the simulated population |
 
 ### Relationships
 
 ```text
 PATIENT
-    ↓
-PATIENT_VISIT
-    ↓
-REFERRAL
-    ↓
-PATIENT_DECISION
-    ↓
-WAITING_LIST_ENTRY
-    ↓
-APPOINTMENT
-    ↓
-VISIT
-    ↓
-SERVICE_DELIVERY
+   ├── PATIENT_VISIT
+   ├── REFERRAL
+   ├── WAITING_LIST_ENTRY
+   ├── APPOINTMENT
+   ├── VISIT
+   └── PATIENT_DECISION
 ```
-
-### Notes
-
-Patient-level records should use synthetic identifiers only.
-
-No real patient-identifiable information is required.
 
 ---
 
-## 4.3 CLINIC
+## 4.2 DOCTOR
+
+### Purpose
+
+Represents a doctor providing healthcare services within the organization.
+
+### Grain
+
+One record per doctor.
+
+### Primary Key
+
+```text
+doctor_id
+```
+
+### Foreign Keys
+
+```text
+specialty_id
+```
+
+### Attributes
+
+| Field                 | Description                       |
+| --------------------- | --------------------------------- |
+| doctor_id             | Unique doctor identifier          |
+| specialty_id          | Primary specialty                 |
+| clinic_id             | Primary assigned clinic           |
+| employment_type       | Employment classification         |
+| compensation_model    | PERCENTAGE, HOURLY_RATE, or MIXED |
+| employment_start_date | Start date                        |
+| employment_end_date   | Optional end date                 |
+| active_flag           | Current active status             |
+
+### Modeling Note
+
+For MVP, each doctor has one primary specialty.
+
+If future requirements introduce multi-specialty doctors, the model may use `DOCTOR_SPECIALTY`.
+
+---
+
+## 4.3 SPECIALTY
+
+### Purpose
+
+Represents the complete catalog of medical specialties available in the simulated healthcare market.
+
+### Grain
+
+One record per specialty.
+
+### Primary Key
+
+```text
+specialty_id
+```
+
+### Attributes
+
+| Field              | Description                                       |
+| ------------------ | ------------------------------------------------- |
+| specialty_id       | Unique specialty identifier                       |
+| specialty_name     | Specialty name                                    |
+| specialty_category | Optional specialty grouping                       |
+| active_flag        | Indicates whether specialty exists in the catalog |
+
+### Modeling Note
+
+Internal availability is **not stored directly on SPECIALTY**.
+
+A specialty may exist in the broader catalog while being unavailable internally.
+
+Internal availability is determined through:
+
+```text
+SPECIALTY
+    ↓
+CLINIC_SPECIALTY
+    ↓
+CLINIC
+```
+
+This allows availability to vary by clinic and over time.
+
+---
+
+## 4.4 CLINIC
 
 ### Purpose
 
@@ -359,171 +291,43 @@ clinic_id
 
 ### Attributes
 
-```text
-clinic_id
-clinic_name
-clinic_type
-specialty_id
-opening_date
-closing_date
-is_active
-```
+| Field        | Description                |
+| ------------ | -------------------------- |
+| clinic_id    | Unique clinic identifier   |
+| clinic_name  | Clinic name                |
+| clinic_type  | POZ, PEDIATRIC, SPECIALIST |
+| opening_date | Clinic opening date        |
+| closing_date | Optional closing date      |
+| active_flag  | Current operational status |
 
 ### Relationships
 
-A clinic may have:
-
-* doctors,
-* rooms,
-* schedules,
-* service types,
-* demand,
-* referrals,
-* capacity,
-* waiting lists,
-* NFZ contracts,
-* revenue,
-* operating costs.
+```text
+CLINIC
+   ├── CLINIC_SPECIALTY
+   ├── DOCTOR
+   ├── ROOM
+   ├── DOCTOR_SCHEDULE
+   ├── ROOM_SCHEDULE
+   ├── DEMAND_EVENT
+   ├── REFERRAL
+   ├── CAPACITY_FACT
+   ├── NFZ_CONTRACT
+   ├── REVENUE_TRANSACTION
+   └── OPERATING_COST
+```
 
 ---
 
-## 4.4 SPECIALTY
+## 4.5 ROOM
 
 ### Purpose
 
-Represents the master catalog of medical specialties.
+Represents a physical room used to deliver healthcare services.
 
 ### Grain
 
-One record per specialty.
-
-### Primary Key
-
-```text
-specialty_id
-```
-
-### Attributes
-
-```text
-specialty_id
-specialty_name
-available_internally
-is_active
-```
-
-### Business Rule
-
-The model should contain approximately 20–25 specialties.
-
-The organization initially provides approximately 11 specialties internally.
-
-Therefore:
-
-```text
-available_internally = TRUE
-```
-
-identifies specialties currently offered by the organization.
-
-Specialties with:
-
-```text
-available_internally = FALSE
-```
-
-remain in the catalog and may generate external referral leakage.
-
----
-
-## 4.5 DOCTOR
-
-### Purpose
-
-Represents a healthcare professional providing services.
-
-### Grain
-
-One record per doctor.
-
-### Primary Key
-
-```text
-doctor_id
-```
-
-### Attributes
-
-```text
-doctor_id
-first_name
-last_name
-specialty_id
-employment_type
-compensation_model
-is_active
-```
-
-### Notes
-
-Doctor capacity is not stored as a static attribute.
-
-Capacity is derived from:
-
-* doctor availability,
-* schedules,
-* working hours,
-* service duration,
-* room availability.
-
----
-
-## 4.6 DOCTOR_CLINIC_ASSIGNMENT
-
-### Purpose
-
-Represents the relationship between doctors and clinics.
-
-### Grain
-
-One record per doctor-clinic assignment over a defined effective period.
-
-### Primary Key
-
-```text
-doctor_clinic_assignment_id
-```
-
-### Foreign Keys
-
-```text
-doctor_id
-clinic_id
-```
-
-### Attributes
-
-```text
-effective_from
-effective_to
-is_primary_assignment
-```
-
-### Notes
-
-This entity allows doctors to work in more than one clinic or to be reallocated between clinics over time.
-
----
-
-## 4.7 ROOM
-
-### Purpose
-
-Represents a physical room used for healthcare services.
-
-### Grain
-
-One record per room.
+One record per physical room.
 
 ### Primary Key
 
@@ -539,23 +343,25 @@ clinic_id
 
 ### Attributes
 
-```text
-room_name
-room_type
-is_active
-```
+| Field         | Description                |
+| ------------- | -------------------------- |
+| room_id       | Unique room identifier     |
+| clinic_id     | Owning clinic              |
+| room_type     | Room classification        |
+| capacity_type | Type of services supported |
+| active_flag   | Current operational status |
 
-### Business Rule
+### Business Rules
 
-A room cannot host overlapping appointments.
+A room cannot host two overlapping appointments.
 
 ---
 
-## 4.8 SERVICE_TYPE
+## 4.6 SERVICE_TYPE
 
 ### Purpose
 
-Defines the type of healthcare service delivered.
+Defines the types of healthcare services delivered by the organization.
 
 ### Grain
 
@@ -569,115 +375,163 @@ service_type_id
 
 ### Attributes
 
-```text
-service_type_name
-visit_category
-default_duration_minutes
-is_nfz_eligible
-is_commercial
-is_active
-```
+| Field                    | Description                  |
+| ------------------------ | ---------------------------- |
+| service_type_id          | Unique service identifier    |
+| service_type_name        | Service name                 |
+| service_category         | Service category             |
+| visit_type               | FIRST_VISIT or FOLLOW_UP     |
+| default_duration_minutes | Default appointment duration |
+| active_flag              | Current status               |
 
-### Supported Visit Categories
+### Business Rules
+
+The model must distinguish at minimum:
 
 ```text
 FIRST_VISIT
 FOLLOW_UP
-PRIMARY_CARE
-PEDIATRIC
-DIAGNOSTIC
 ```
 
-### Notes
+These may have different:
 
-Service type determines operational and financial characteristics.
-
-Different service types may have different:
-
-* appointment durations,
-* revenue,
+* durations,
+* prices,
 * NFZ limits,
-* compensation rules.
+* compensation rules,
+* capacity characteristics.
 
 ---
 
-# 5. Scheduling and Availability Entities
-
-## 5.1 DOCTOR_SCHEDULE
+## 4.7 DATE_DIMENSION
 
 ### Purpose
 
-Represents the planned availability of a doctor.
+Provides a common calendar dimension for analytical reporting.
 
 ### Grain
 
-One doctor schedule record for a defined date/time interval.
+One record per calendar date.
 
 ### Primary Key
 
 ```text
-doctor_schedule_id
+date_key
+```
+
+### Attributes
+
+| Field         | Description                    |
+| ------------- | ------------------------------ |
+| date_key      | Date identifier                |
+| calendar_date | Actual calendar date           |
+| day_of_week   | Day number/name                |
+| week_number   | Calendar week                  |
+| month         | Month                          |
+| quarter       | Quarter                        |
+| year          | Year                           |
+| is_weekend    | Weekend flag                   |
+| season        | Optional season classification |
+
+---
+
+# 5. Organizational Availability Entities
+
+## 5.1 CLINIC_SPECIALTY
+
+### Purpose
+
+Defines which specialties are provided internally by which clinics and during which periods.
+
+### Grain
+
+One record per clinic-specialty availability period.
+
+### Primary Key
+
+```text
+clinic_specialty_id
+```
+
+### Foreign Keys
+
+```text
+clinic_id
+specialty_id
+```
+
+### Attributes
+
+| Field               | Description                    |
+| ------------------- | ------------------------------ |
+| clinic_specialty_id | Unique relationship identifier |
+| clinic_id           | Clinic                         |
+| specialty_id        | Specialty                      |
+| effective_from      | Availability start             |
+| effective_to        | Availability end               |
+| is_active           | Current availability           |
+
+### Business Rules
+
+A specialty is considered internally available when an active record exists for the relevant date.
+
+```text
+SPECIALTY
+    ↓
+CLINIC_SPECIALTY
+    ↓
+CLINIC
+```
+
+This entity replaces the need for a static:
+
+```text
+SPECIALTY.available_internally
+```
+
+attribute.
+
+---
+
+## 5.2 DOCTOR_SPECIALTY
+
+### Purpose
+
+Optional bridge entity supporting doctors with multiple specialties.
+
+### Grain
+
+One record per doctor-specialty relationship.
+
+### Primary Key
+
+```text
+doctor_specialty_id
 ```
 
 ### Foreign Keys
 
 ```text
 doctor_id
-clinic_id
-date_key
+specialty_id
 ```
 
 ### Attributes
 
-```text
-schedule_start_datetime
-schedule_end_datetime
-available_minutes
-schedule_status
-```
+| Field               | Description            |
+| ------------------- | ---------------------- |
+| doctor_specialty_id | Unique identifier      |
+| doctor_id           | Doctor                 |
+| specialty_id        | Specialty              |
+| is_primary          | Primary specialty flag |
+| effective_from      | Relationship start     |
+| effective_to        | Relationship end       |
 
-### Notes
+### MVP Note
 
-Doctor schedules are inputs to operational capacity.
+For the initial MVP, `DOCTOR.specialty_id` may remain the primary specialty reference.
 
----
-
-## 5.2 ROOM_SCHEDULE
-
-### Purpose
-
-Represents the planned availability of a room.
-
-### Grain
-
-One room availability record for a defined date/time interval.
-
-### Primary Key
-
-```text
-room_schedule_id
-```
-
-### Foreign Keys
-
-```text
-room_id
-clinic_id
-date_key
-```
-
-### Attributes
-
-```text
-schedule_start_datetime
-schedule_end_datetime
-available_minutes
-schedule_status
-```
-
-### Notes
-
-Room availability constrains operational capacity.
+This entity exists to support future extension.
 
 ---
 
@@ -687,7 +541,14 @@ Room availability constrains operational capacity.
 
 ### Purpose
 
-Represents a single simulated patient demand event.
+Represents a unit of simulated healthcare demand.
+
+A demand event represents a patient's need or request for healthcare service that may ultimately be:
+
+* fulfilled internally,
+* placed into a waiting list,
+* redirected externally,
+* or abandoned.
 
 ### Grain
 
@@ -711,42 +572,30 @@ date_key
 
 ### Attributes
 
-```text
-demand_datetime
-demand_source
-demand_status
-```
+| Field           | Description                                     |
+| --------------- | ----------------------------------------------- |
+| demand_event_id | Unique demand event                             |
+| patient_id      | Patient generating demand                       |
+| clinic_id       | Relevant clinic                                 |
+| specialty_id    | Required specialty                              |
+| service_type_id | Required service                                |
+| demand_source   | POZ, PEDIATRIC, REFERRAL, FOLLOW_UP, DIAGNOSTIC |
+| demand_date     | Date demand occurred                            |
+| scenario_id     | Simulation scenario                             |
 
-### Demand Sources
+### Business Rule
 
-Examples:
+Demand does not automatically equal completed service.
 
-```text
-DIRECT_PRIMARY_CARE
-PEDIATRIC
-SPECIALIST_REFERRAL
-FOLLOW_UP
-DIAGNOSTIC
-```
-
-### Important Rule
-
-Demand does not automatically equal completed visits.
-
-A demand event may result in:
+Possible outcomes include:
 
 ```text
-INTERNAL_SERVICE
-WAITING
-EXTERNAL
-NOT_COMPLETED
+Demand
+   ├── Internal Service
+   ├── Waiting
+   ├── External
+   └── Drop
 ```
-
-### Grain Decision
-
-The base simulation model uses patient-level demand events.
-
-Daily, weekly, monthly, quarterly, and annual demand should be aggregated analytically.
 
 ---
 
@@ -754,11 +603,11 @@ Daily, weekly, monthly, quarterly, and annual demand should be aggregated analyt
 
 ### Purpose
 
-Represents primary-care or pediatric encounters that may generate specialist referrals.
+Represents an initial healthcare visit that may generate a specialist referral.
 
 ### Grain
 
-One record per primary-care or pediatric visit.
+One record per patient visit.
 
 ### Primary Key
 
@@ -772,24 +621,19 @@ patient_visit_id
 patient_id
 doctor_id
 clinic_id
-service_type_id
-date_key
 ```
 
 ### Attributes
 
-```text
-visit_datetime
-visit_type
-referral_required
-```
-
-### Visit Types
-
-```text
-PRIMARY_CARE
-PEDIATRIC
-```
+| Field                  | Description                              |
+| ---------------------- | ---------------------------------------- |
+| patient_visit_id       | Unique visit identifier                  |
+| patient_id             | Patient                                  |
+| doctor_id              | Doctor                                   |
+| clinic_id              | Clinic                                   |
+| visit_date             | Date                                     |
+| visit_type             | POZ or PEDIATRIC                         |
+| referral_required_flag | Whether specialist referral is generated |
 
 ---
 
@@ -797,7 +641,7 @@ PEDIATRIC
 
 ### Purpose
 
-Represents a referral from an originating healthcare encounter to a target specialty.
+Represents a referral from an originating provider to a target specialty.
 
 ### Grain
 
@@ -816,29 +660,49 @@ patient_id
 referring_doctor_id
 referring_clinic_id
 target_specialty_id
-source_patient_visit_id
-date_key
+target_clinic_id
+demand_event_id
 ```
 
 ### Attributes
 
+| Field               | Description                                       |
+| ------------------- | ------------------------------------------------- |
+| referral_id         | Unique referral                                   |
+| patient_id          | Referred patient                                  |
+| referring_doctor_id | Referring doctor                                  |
+| referring_clinic_id | Originating clinic                                |
+| target_specialty_id | Requested specialty                               |
+| target_clinic_id    | Target internal clinic, if applicable             |
+| demand_event_id     | Related demand                                    |
+| referral_date       | Referral creation date                            |
+| referral_status     | CREATED, WAITING, SCHEDULED, COMPLETED, CANCELLED |
+| final_outcome       | INTERNAL, EXTERNAL, NOT_COMPLETED                 |
+| outcome_date        | Date final outcome was determined                 |
+
+### Business Rules
+
+`referral_status` represents process lifecycle.
+
+`final_outcome` represents the final business result.
+
+These concepts must not be conflated.
+
+Example:
+
 ```text
-referral_datetime
-referral_status
-destination_type
+referral_status = COMPLETED
+final_outcome = INTERNAL
 ```
 
-### Referral Status
+or:
 
 ```text
-CREATED
-WAITING
-SCHEDULED
-COMPLETED
-CANCELLED
+referral_status = CANCELLED
+final_outcome = NOT_COMPLETED
 ```
 
-### Destination Type
+The final outcome categories are:
 
 ```text
 INTERNAL
@@ -846,30 +710,21 @@ EXTERNAL
 NOT_COMPLETED
 ```
 
-### Important Modeling Rule
-
-`referral_status` and `destination_type` represent different concepts.
-
-They must not be merged into a single attribute.
-
-Example:
+These support:
 
 ```text
-referral_status = WAITING
-destination_type = INTERNAL
+Internal Capture Rate
+External Leakage Rate
+Non-Completion Rate
 ```
-
-means that the patient is currently waiting for internal care.
 
 ---
 
-# 7. Patient Behavior and Waiting List Entities
-
-## 7.1 PATIENT_DECISION
+## 6.4 PATIENT_DECISION
 
 ### Purpose
 
-Represents a patient's decision in response to the referral pathway and waiting time.
+Records the patient's behavioral decision in response to waiting time.
 
 ### Grain
 
@@ -886,19 +741,25 @@ patient_decision_id
 ```text
 referral_id
 patient_id
-date_key
+behavior_rule_id
 ```
 
 ### Attributes
 
-```text
-decision_datetime
-decision_type
-waiting_time_at_decision_days
-decision_probability
-```
+| Field                            | Description                                |
+| -------------------------------- | ------------------------------------------ |
+| patient_decision_id              | Unique decision                            |
+| referral_id                      | Related referral                           |
+| patient_id                       | Patient                                    |
+| decision_date                    | Decision date                              |
+| waiting_time_at_decision_days    | Waiting time when decision occurred        |
+| decision_type                    | WAIT, EXTERNAL, DROP                       |
+| behavior_rule_id                 | Applied behavior rule                      |
+| decision_probability_at_decision | Optional probability used at decision time |
 
-### Decision Types
+### Business Rules
+
+For an internally available specialty:
 
 ```text
 WAIT
@@ -906,31 +767,31 @@ EXTERNAL
 DROP
 ```
 
-### Business Rule
-
-For an internally available specialty, patient behavior is influenced primarily by waiting time.
+are valid decisions.
 
 For an unavailable specialty:
 
 ```text
-Referral
-    ↓
-No Internal Clinic
-    ↓
 EXTERNAL
 ```
 
+is the expected outcome.
+
+The probability used for the decision should be traceable to `PATIENT_BEHAVIOR_RULE`.
+
 ---
 
-## 7.2 WAITING_LIST_ENTRY
+# 7. Waiting and Scheduling Entities
+
+## 7.1 WAITING_LIST_ENTRY
 
 ### Purpose
 
-Represents one patient's episode in an internal waiting queue.
+Represents a patient's waiting episode for a service.
 
 ### Grain
 
-One record per patient referral waiting episode.
+One record per waiting episode.
 
 ### Primary Key
 
@@ -941,89 +802,53 @@ waiting_list_entry_id
 ### Foreign Keys
 
 ```text
-referral_id
 patient_id
+referral_id
 clinic_id
 specialty_id
 service_type_id
-date_entered_key
-date_exited_key
 ```
 
 ### Attributes
 
-```text
-queue_entry_datetime
-queue_exit_datetime
-queue_status
-exit_reason
-```
+| Field                 | Description                                   |
+| --------------------- | --------------------------------------------- |
+| waiting_list_entry_id | Unique waiting episode                        |
+| patient_id            | Patient                                       |
+| referral_id           | Referral                                      |
+| clinic_id             | Clinic                                        |
+| specialty_id          | Specialty                                     |
+| service_type_id       | Service                                       |
+| queue_entry_datetime  | Queue entry                                   |
+| queue_exit_datetime   | Queue exit                                    |
+| queue_status          | WAITING, SERVED, EXTERNAL, DROPPED, CANCELLED |
+| waiting_days          | Derived waiting duration                      |
 
-### Queue Status
-
-```text
-WAITING
-SCHEDULED
-COMPLETED
-EXTERNAL
-DROPPED
-```
-
-### Exit Reasons
-
-Examples:
-
-```text
-APPOINTMENT_SCHEDULED
-SERVICE_COMPLETED
-EXTERNAL_PROVIDER
-PATIENT_DROPPED
-REFERRAL_CANCELLED
-```
-
-### Important Rule
+### Business Rules
 
 The waiting list is dynamic.
 
-Queue size should be derived from active waiting list entries for a given point in time.
+Conceptually:
+
+```text
+New Demand
++
+Existing Queue
+-
+Served Patients
+-
+External Leakage
+-
+Dropped Patients
+=
+New Queue
+```
+
+Daily or weekly queue simulation is supported.
 
 ---
 
-## 7.3 WAITING TIME
-
-### Modeling Decision
-
-`WAITING_TIME` is not modeled as an independent source entity.
-
-It is a derived metric.
-
-For completed internal care:
-
-```text
-Waiting Time
-=
-Appointment Start Datetime
--
-Queue Entry Datetime
-```
-
-For an active waiting episode:
-
-```text
-Current Waiting Time
-=
-Current Date
--
-Queue Entry Datetime
-```
-
-Waiting time may influence patient decision probability.
-
----
-
-# 8. Appointment and Service Delivery Entities
-
-## 8.1 APPOINTMENT
+## 7.2 APPOINTMENT
 
 ### Purpose
 
@@ -1046,54 +871,43 @@ patient_id
 doctor_id
 clinic_id
 room_id
-specialty_id
-service_type_id
 referral_id
-date_key
+service_type_id
 ```
 
 ### Attributes
 
-```text
-scheduled_start_datetime
-scheduled_end_datetime
-appointment_status
-booking_datetime
-```
-
-### Appointment Status
-
-```text
-SCHEDULED
-COMPLETED
-CANCELLED
-NO_SHOW
-```
+| Field                    | Description                              |
+| ------------------------ | ---------------------------------------- |
+| appointment_id           | Unique appointment                       |
+| patient_id               | Patient                                  |
+| doctor_id                | Doctor                                   |
+| clinic_id                | Clinic                                   |
+| room_id                  | Room                                     |
+| referral_id              | Referral, if applicable                  |
+| service_type_id          | Service                                  |
+| scheduled_start_datetime | Start                                    |
+| scheduled_end_datetime   | End                                      |
+| appointment_status       | SCHEDULED, COMPLETED, CANCELLED, NO_SHOW |
 
 ### Business Rules
 
 The model must prevent:
 
-```text
-Doctor overlap
-Room overlap
-```
-
-The same doctor cannot have overlapping appointments.
-
-The same room cannot host overlapping appointments.
+* overlapping appointments for the same doctor,
+* overlapping appointments in the same room.
 
 ---
 
-## 8.2 VISIT
+## 7.3 VISIT
 
 ### Purpose
 
-Represents the actual patient attendance associated with an appointment.
+Represents an actual completed or attempted healthcare encounter.
 
 ### Grain
 
-One record per actual patient attendance event.
+One record per patient encounter.
 
 ### Primary Key
 
@@ -1108,46 +922,33 @@ appointment_id
 patient_id
 doctor_id
 clinic_id
-room_id
-service_type_id
-date_key
 ```
 
 ### Attributes
 
-```text
-actual_start_datetime
-actual_end_datetime
-attendance_status
-```
-
-### Attendance Status
-
-```text
-ATTENDED
-NO_SHOW
-CANCELLED
-```
-
-### Modeling Rule
-
-An appointment is a planned event.
-
-A visit is an actual attendance event.
-
-They must remain separate.
+| Field          | Description                   |
+| -------------- | ----------------------------- |
+| visit_id       | Unique visit                  |
+| appointment_id | Related appointment           |
+| patient_id     | Patient                       |
+| doctor_id      | Doctor                        |
+| clinic_id      | Clinic                        |
+| visit_date     | Actual date                   |
+| visit_status   | COMPLETED, CANCELLED, NO_SHOW |
 
 ---
 
-## 8.3 SERVICE_DELIVERY
+# 8. Service Delivery Entities
+
+## 8.1 SERVICE_DELIVERY
 
 ### Purpose
 
-Represents the healthcare service actually delivered and used for operational and financial analysis.
+Represents a healthcare service actually delivered.
 
 ### Grain
 
-One record per delivered healthcare service.
+One record per delivered service.
 
 ### Primary Key
 
@@ -1164,55 +965,164 @@ doctor_id
 clinic_id
 specialty_id
 service_type_id
-date_key
-nfz_contract_id
 ```
 
 ### Attributes
 
-```text
-delivery_datetime
-payer_type
-delivery_status
-```
-
-### Payer Types
-
-```text
-NFZ
-COMMERCIAL
-```
-
-### Delivery Status
-
-```text
-DELIVERED
-```
-
-### Important Rule
-
-`SERVICE_DELIVERY` represents actual output.
-
-It must not be confused with:
-
-```text
-DEMAND
-OPERATIONAL_CAPACITY
-NFZ_FUNDED_CAPACITY
-EFFECTIVE_CAPACITY
-```
-
-These are separate concepts.
+| Field               | Description              |
+| ------------------- | ------------------------ |
+| service_delivery_id | Unique delivered service |
+| visit_id            | Related visit            |
+| patient_id          | Patient                  |
+| doctor_id           | Doctor                   |
+| clinic_id           | Clinic                   |
+| specialty_id        | Specialty                |
+| service_type_id     | Service                  |
+| service_date        | Delivery date            |
+| payer_type          | NFZ or COMMERCIAL        |
+| delivery_status     | DELIVERED, VOIDED        |
 
 ---
 
-# 9. Capacity Entities
-
-## 9.1 CAPACITY_FACT
+## 8.2 SERVICE_PRICING
 
 ### Purpose
 
-Stores calculated operational and funded capacity for analytical use.
+Defines the price or economic value of a service for a specific payer and effective period.
+
+### Grain
+
+One record per service type, payer type, and effective pricing period.
+
+### Primary Key
+
+```text
+service_pricing_id
+```
+
+### Foreign Keys
+
+```text
+service_type_id
+```
+
+### Attributes
+
+| Field              | Description           |
+| ------------------ | --------------------- |
+| service_pricing_id | Unique pricing record |
+| service_type_id    | Service               |
+| payer_type         | NFZ or COMMERCIAL     |
+| price_amount       | Service price/value   |
+| effective_from     | Pricing start         |
+| effective_to       | Pricing end           |
+| active_flag        | Current status        |
+
+### Business Rules
+
+Pricing may differ by:
+
+* service type,
+* payer type,
+* time period.
+
+Example:
+
+```text
+FIRST_VISIT
+    NFZ        → 250 PLN
+    COMMERCIAL → 350 PLN
+
+FOLLOW_UP
+    NFZ        → 150 PLN
+    COMMERCIAL → 220 PLN
+```
+
+The applicable price is determined by service date and payer type.
+
+---
+
+# 9. Capacity and Operational Entities
+
+## 9.1 DOCTOR_SCHEDULE
+
+### Purpose
+
+Defines doctor availability and working capacity.
+
+### Grain
+
+One record per doctor per schedule period.
+
+### Primary Key
+
+```text
+doctor_schedule_id
+```
+
+### Foreign Keys
+
+```text
+doctor_id
+clinic_id
+date_key
+```
+
+### Attributes
+
+| Field              | Description     |
+| ------------------ | --------------- |
+| doctor_schedule_id | Unique schedule |
+| doctor_id          | Doctor          |
+| clinic_id          | Clinic          |
+| date_key           | Date            |
+| available_hours    | Available hours |
+| working_flag       | Working status  |
+
+---
+
+## 9.2 ROOM_SCHEDULE
+
+### Purpose
+
+Defines room availability.
+
+### Grain
+
+One record per room per schedule period.
+
+### Primary Key
+
+```text
+room_schedule_id
+```
+
+### Foreign Keys
+
+```text
+room_id
+clinic_id
+date_key
+```
+
+### Attributes
+
+| Field            | Description          |
+| ---------------- | -------------------- |
+| room_schedule_id | Unique schedule      |
+| room_id          | Room                 |
+| clinic_id        | Clinic               |
+| date_key         | Date                 |
+| available_hours  | Available room hours |
+| available_flag   | Availability         |
+
+---
+
+## 9.3 CAPACITY_FACT
+
+### Purpose
+
+Stores calculated operational and contractual capacity for a service line.
 
 ### Grain
 
@@ -1238,28 +1148,29 @@ date_key
 clinic_id
 specialty_id
 service_type_id
+nfz_contract_id
+scenario_id
 ```
 
 ### Attributes
 
+| Field                     | Description                             |
+| ------------------------- | --------------------------------------- |
+| capacity_fact_id          | Unique capacity record                  |
+| date_key                  | Capacity date                           |
+| clinic_id                 | Clinic                                  |
+| specialty_id              | Specialty                               |
+| service_type_id           | Service                                 |
+| nfz_contract_id           | Applicable NFZ contract                 |
+| scenario_id               | Scenario                                |
+| operational_capacity      | Physical capacity                       |
+| nfz_funded_capacity       | Contractual funded capacity             |
+| effective_capacity        | Minimum of operational and NFZ capacity |
+| actual_delivered_services | Actual delivered services               |
+
+### Business Rules
+
 ```text
-operational_capacity
-nfz_funded_capacity
-effective_capacity
-actual_delivered_services
-```
-
-### Capacity Definitions
-
-```text
-Operational Capacity
-=
-Physical service capacity based on available resources
-
-NFZ Funded Capacity
-=
-Contractually funded service capacity
-
 Effective Capacity
 =
 MIN(
@@ -1268,68 +1179,39 @@ MIN(
 )
 ```
 
-### Important Rule
+Operational capacity is constrained by:
 
-`actual_delivered_services` is sourced from `SERVICE_DELIVERY`.
+* doctors,
+* doctor hours,
+* doctor schedules,
+* rooms,
+* room availability,
+* appointment duration.
 
-It should not be independently generated as an unrelated capacity measure.
+NFZ funded capacity is a contractual constraint.
 
----
-
-## 9.2 Operational Capacity Calculation
-
-Operational capacity depends on:
-
-```text
-DOCTOR
-+
-DOCTOR_SCHEDULE
-+
-ROOM
-+
-ROOM_SCHEDULE
-+
-SERVICE_TYPE
-```
-
-Conceptually:
+The model must distinguish:
 
 ```text
-Doctor Available Minutes
-        ÷
-Service Duration
-        ↓
-Doctor Capacity
-
-Room Available Minutes
-        ÷
-Service Duration
-        ↓
-Room Capacity
-
-MIN(
-    Doctor Capacity,
-    Room Capacity
-)
-        ↓
 Operational Capacity
+Funded Capacity
+Effective Capacity
+Actual Delivered Services
 ```
-
-This ensures that operational capacity cannot exceed the physical ability of the organization to deliver services.
 
 ---
 
-# 10. NFZ Contract Entities
+# 10. NFZ Contracting Entities
 
 ## 10.1 NFZ_CONTRACT
 
 ### Purpose
 
-Represents a simulated NFZ contract for a specific service line.
+Represents a simulated NFZ contract for a specific service line and contractual period.
 
 ### Grain
 
-One contract service line for a defined period.
+One record per clinic-specialty-service contract period.
 
 ### Primary Key
 
@@ -1347,32 +1229,41 @@ service_type_id
 
 ### Attributes
 
+| Field                      | Description                |
+| -------------------------- | -------------------------- |
+| nfz_contract_id            | Unique contract            |
+| clinic_id                  | Clinic                     |
+| specialty_id               | Specialty                  |
+| service_type_id            | Service                    |
+| contract_start_date        | Contract start             |
+| contract_end_date          | Contract end               |
+| original_contracted_volume | Original contracted volume |
+| volume_period              | MONTH, QUARTER, YEAR       |
+| contract_status            | ACTIVE, EXPIRED, CANCELLED |
+| active_flag                | Current status             |
+
+### Business Rules
+
+The contract defines the maximum funded volume for the applicable period.
+
+The model should support:
+
 ```text
-contract_start_date
-contract_end_date
-contracted_volume
-contract_status
-```
-
-### Contract Status
-
-```text
-ACTIVE
-EXPIRED
-CANCELLED
-```
-
-### Analytical Metrics
-
-The following are derived:
-
-```text
-Delivered Funded Services
+Contracted Volume
+Delivered Volume
 Remaining Contract Capacity
 Contract Utilization
 Overperformance
-Underutilization
+Underperformance
 ```
+
+The contract should be analyzable by:
+
+* specialty,
+* clinic,
+* service type,
+* quarter,
+* year.
 
 ---
 
@@ -1384,69 +1275,266 @@ Represents a change to an existing NFZ contract.
 
 ### Grain
 
-One contract amendment event.
+One record per contract amendment.
 
 ### Primary Key
 
 ```text
-amendment_id
+nfz_contract_amendment_id
 ```
 
 ### Foreign Keys
 
 ```text
 nfz_contract_id
-effective_date_key
 ```
 
 ### Attributes
 
-```text
-amendment_type
-previous_contracted_volume
-new_contracted_volume
-change_amount
-```
+| Field                      | Description            |
+| -------------------------- | ---------------------- |
+| nfz_contract_amendment_id  | Unique amendment       |
+| nfz_contract_id            | Contract               |
+| amendment_date             | Amendment date         |
+| effective_from             | Effective date         |
+| previous_contracted_volume | Previous volume        |
+| new_contracted_volume      | New volume             |
+| change_amount              | Difference             |
+| amendment_reason           | Reason                 |
+| scenario_id                | Scenario, if simulated |
 
-### Amendment Types
+### Business Rules
 
-```text
-INCREASE
-DECREASE
-SERVICE_VOLUME_CHANGE
-```
+An amendment may:
 
-### Business Impact
+* increase funded capacity,
+* decrease funded capacity,
+* change service volume,
+* change effective capacity.
 
-A contract amendment may affect:
-
-```text
-NFZ Funded Capacity
-        ↓
-Effective Capacity
-        ↓
-Waiting Time
-        ↓
-Patient Leakage
-        ↓
-Delivered Services
-        ↓
-Revenue
-```
+Historical contract states must remain reconstructable.
 
 ---
 
-# 11. Resource Reallocation
+# 11. Revenue and Financial Entities
 
-## 11.1 RESOURCE_REALLOCATION
+## 11.1 REVENUE_TRANSACTION
 
 ### Purpose
 
-Represents a decision to move resources between clinics.
+Represents economic revenue generated by a delivered healthcare service.
 
 ### Grain
 
-One resource reallocation event.
+One record per revenue-generating service delivery.
+
+### Primary Key
+
+```text
+revenue_transaction_id
+```
+
+### Foreign Keys
+
+```text
+service_delivery_id
+service_pricing_id
+patient_id
+doctor_id
+clinic_id
+```
+
+### Attributes
+
+| Field                  | Description                |
+| ---------------------- | -------------------------- |
+| revenue_transaction_id | Unique revenue transaction |
+| service_delivery_id    | Delivered service          |
+| service_pricing_id     | Applied pricing            |
+| patient_id             | Patient                    |
+| doctor_id              | Doctor                     |
+| clinic_id              | Clinic                     |
+| transaction_date       | Date                       |
+| gross_service_revenue  | Gross service revenue      |
+| payer_type             | NFZ or COMMERCIAL          |
+
+### Business Rules
+
+The model separates:
+
+```text
+Total Service Revenue
+Doctor Compensation
+Clinic Revenue
+Operating Costs
+Net Clinic Result
+```
+
+Clinic revenue is derived from:
+
+```text
+Clinic Revenue
+=
+Gross Service Revenue
+-
+Doctor Compensation
+```
+
+unless a future business rule explicitly introduces additional revenue allocation components.
+
+---
+
+## 11.2 COMPENSATION_RULE
+
+### Purpose
+
+Defines the compensation logic applicable to a doctor.
+
+### Grain
+
+One record per doctor compensation rule and effective period.
+
+### Primary Key
+
+```text
+compensation_rule_id
+```
+
+### Foreign Keys
+
+```text
+doctor_id
+```
+
+### Attributes
+
+| Field                | Description                    |
+| -------------------- | ------------------------------ |
+| compensation_rule_id | Unique rule                    |
+| doctor_id            | Doctor                         |
+| compensation_model   | PERCENTAGE, HOURLY_RATE, MIXED |
+| percentage_rate      | Revenue percentage             |
+| hourly_rate          | Hourly compensation            |
+| fixed_amount         | Optional fixed component       |
+| effective_from       | Rule start                     |
+| effective_to         | Rule end                       |
+
+### Business Rules
+
+```text
+PERCENTAGE
+→ percentage_rate
+
+HOURLY_RATE
+→ hourly_rate
+
+MIXED
+→ hourly_rate + percentage_rate
+```
+
+Only attributes relevant to the selected model should be populated.
+
+---
+
+## 11.3 DOCTOR_COMPENSATION_TRANSACTION
+
+### Purpose
+
+Represents compensation generated for a doctor.
+
+### Grain
+
+One record per compensation transaction.
+
+### Primary Key
+
+```text
+doctor_compensation_transaction_id
+```
+
+### Foreign Keys
+
+```text
+doctor_id
+service_delivery_id
+compensation_rule_id
+```
+
+### Attributes
+
+| Field                              | Description         |
+| ---------------------------------- | ------------------- |
+| doctor_compensation_transaction_id | Unique transaction  |
+| doctor_id                          | Doctor              |
+| service_delivery_id                | Service             |
+| compensation_rule_id               | Applied rule        |
+| transaction_date                   | Date                |
+| compensation_amount                | Doctor compensation |
+
+---
+
+## 11.4 OPERATING_COST
+
+### Purpose
+
+Represents operating costs incurred by the organization.
+
+### Grain
+
+One record per cost transaction or cost allocation period.
+
+### Primary Key
+
+```text
+operating_cost_id
+```
+
+### Foreign Keys
+
+```text
+clinic_id
+date_key
+scenario_id
+```
+
+### Attributes
+
+| Field             | Description                                     |
+| ----------------- | ----------------------------------------------- |
+| operating_cost_id | Unique cost                                     |
+| clinic_id         | Clinic                                          |
+| date_key          | Cost date                                       |
+| cost_category     | RENT, UTILITIES, INSURANCE, DEPRECIATION, OTHER |
+| cost_period_start | Cost period start                               |
+| cost_period_end   | Cost period end                                 |
+| cost_amount       | Cost amount                                     |
+| scenario_id       | Scenario                                        |
+
+### Business Rules
+
+Costs may be modeled as:
+
+* daily,
+* monthly,
+* quarterly,
+* annual,
+* or one-time transactions.
+
+The period must be explicit when a cost represents an allocation over time.
+
+---
+
+# 12. Resource Reallocation
+
+## 12.1 RESOURCE_REALLOCATION
+
+### Purpose
+
+Represents an operational decision to reallocate resources between clinics.
+
+### Grain
+
+One record per resource reallocation event.
 
 ### Primary Key
 
@@ -1460,287 +1548,61 @@ resource_reallocation_id
 source_clinic_id
 target_clinic_id
 doctor_id
-source_room_id
-target_room_id
-effective_date_key
+room_id
+scenario_id
 ```
 
 ### Attributes
 
-```text
-resource_type
-quantity
-trigger_reason
-```
+| Field                    | Description                                      |
+| ------------------------ | ------------------------------------------------ |
+| resource_reallocation_id | Unique event                                     |
+| reallocation_date        | Decision date                                    |
+| source_clinic_id         | Origin clinic                                    |
+| target_clinic_id         | Destination clinic                               |
+| resource_type            | DOCTOR, DOCTOR_HOURS, ROOM, OPERATIONAL_CAPACITY |
+| doctor_id                | Doctor, when applicable                          |
+| room_id                  | Room, when applicable                            |
+| source_quantity          | Quantity removed from source                     |
+| target_quantity          | Quantity added to target                         |
+| reason                   | Operational rationale                            |
+| scenario_id              | Scenario                                         |
 
-### Resource Types
+### Business Rules
 
-```text
-DOCTOR
-DOCTOR_HOURS
-ROOM
-OPERATIONAL_CAPACITY
-```
+Resource reallocation is an **operational event**.
 
-### Trigger Reasons
+It must affect future capacity.
 
-Examples:
-
-```text
-LOW_UTILIZATION
-HIGH_DEMAND
-LONG_WAITING_TIME
-HIGH_LEAKAGE
-STRATEGIC_PRIORITY
-```
-
-### Modeling Rule
-
-The model must preserve:
+The model should preserve:
 
 ```text
 Current State
-        ↓
-Reallocation Event
-        ↓
+```
+
+and:
+
+```text
 Post-Reallocation State
 ```
 
-This allows before-and-after analysis.
+This enables before-and-after analysis.
+
+For `DOCTOR_HOURS`, quantities represent hours.
+
+For `ROOM`, quantities represent room units.
+
+For `OPERATIONAL_CAPACITY`, quantities represent capacity units.
 
 ---
 
-# 12. Revenue and Financial Entities
-
-## 12.1 REVENUE_TRANSACTION
-
-### Purpose
-
-Represents economic revenue generated by a delivered healthcare service.
-
-### Grain
-
-One revenue transaction per delivered service.
-
-### Primary Key
-
-```text
-revenue_transaction_id
-```
-
-### Foreign Keys
-
-```text
-service_delivery_id
-patient_id
-doctor_id
-clinic_id
-service_type_id
-date_key
-```
-
-### Attributes
-
-```text
-payer_type
-gross_service_revenue
-```
-
-### Payer Types
-
-```text
-NFZ
-COMMERCIAL
-```
-
----
-
-## 12.2 COMPENSATION_RULE
-
-### Purpose
-
-Defines how doctor compensation is calculated.
-
-### Grain
-
-One compensation rule for a doctor or applicable service configuration over an effective period.
-
-### Primary Key
-
-```text
-compensation_rule_id
-```
-
-### Foreign Keys
-
-```text
-doctor_id
-service_type_id
-```
-
-### Attributes
-
-```text
-compensation_model
-percentage_rate
-hourly_rate
-effective_from
-effective_to
-```
-
-### Compensation Models
-
-```text
-PERCENTAGE
-HOURLY_RATE
-MIXED
-```
-
-### Notes
-
-This entity stores the business rule.
-
-It does not represent an actual payment.
-
----
-
-## 12.3 DOCTOR_COMPENSATION_TRANSACTION
-
-### Purpose
-
-Represents the actual compensation cost generated from delivered services.
-
-### Grain
-
-One compensation transaction.
-
-### Primary Key
-
-```text
-compensation_transaction_id
-```
-
-### Foreign Keys
-
-```text
-service_delivery_id
-doctor_id
-compensation_rule_id
-date_key
-```
-
-### Attributes
-
-```text
-compensation_amount
-```
-
-### Modeling Rule
-
-The distinction is:
-
-```text
-COMPENSATION_RULE
-        ↓
-Business Logic
-
-DOCTOR_COMPENSATION_TRANSACTION
-        ↓
-Actual Financial Cost
-```
-
----
-
-## 12.4 COST_CATEGORY
-
-### Purpose
-
-Defines operating cost categories.
-
-### Grain
-
-One record per cost category.
-
-### Primary Key
-
-```text
-cost_category_id
-```
-
-### Attributes
-
-```text
-cost_category_name
-cost_behavior
-```
-
-### Cost Behaviors
-
-```text
-FIXED
-VARIABLE
-SEMI_VARIABLE
-```
-
-### Example Categories
-
-```text
-NURSING
-REGISTRATION
-ADMINISTRATION
-CLEANING
-UTILITIES
-RENT
-IT
-MEDICAL_SYSTEMS
-INSURANCE
-EQUIPMENT
-DEPRECIATION
-OTHER
-```
-
----
-
-## 12.5 OPERATING_COST
-
-### Purpose
-
-Represents operating costs incurred by the organization.
-
-### Grain
-
-One cost transaction for a defined clinic and accounting period.
-
-### Primary Key
-
-```text
-operating_cost_id
-```
-
-### Foreign Keys
-
-```text
-clinic_id
-cost_category_id
-date_key
-```
-
-### Attributes
-
-```text
-cost_amount
-cost_description
-```
-
----
-
-# 13. Scenario Modeling Entities
+# 13. Scenario Entities
 
 ## 13.1 SCENARIO
 
 ### Purpose
 
-Represents a simulation scenario.
+Represents a simulation scenario used for What-if analysis.
 
 ### Grain
 
@@ -1752,90 +1614,52 @@ One record per scenario.
 scenario_id
 ```
 
-### Attributes
-
-```text
-scenario_name
-scenario_type
-description
-is_baseline
-```
-
-### Scenario Types
-
-Examples:
-
-```text
-BASELINE
-NEW_CLINIC
-NEW_SPECIALTY
-NEW_DOCTORS
-NEW_ROOMS
-NEW_EQUIPMENT
-NEW_NFZ_CONTRACT
-RESOURCE_REALLOCATION
-```
-
-### Modeling Rule
-
-The baseline scenario must remain immutable.
-
-Scenario changes must not overwrite baseline source data.
-
----
-
-## 13.2 SCENARIO_PARAMETER
-
-### Purpose
-
-Stores configurable parameters used by the simulation.
-
-### Grain
-
-One parameter value for one scenario.
-
-### Primary Key
-
-```text
-scenario_parameter_id
-```
-
 ### Foreign Keys
 
 ```text
-scenario_id
+parent_scenario_id
 ```
 
 ### Attributes
 
-```text
-parameter_name
-parameter_value
-parameter_type
-effective_from
-effective_to
-```
+| Field              | Description                    |
+| ------------------ | ------------------------------ |
+| scenario_id        | Unique scenario                |
+| scenario_name      | Scenario name                  |
+| scenario_type      | BASELINE or WHAT_IF            |
+| parent_scenario_id | Parent scenario, if applicable |
+| is_baseline        | Baseline flag                  |
+| description        | Scenario description           |
+| effective_from     | Scenario start                 |
+| effective_to       | Scenario end                   |
+| created_date       | Creation date                  |
 
-### Examples
+### Business Rules
+
+The baseline scenario represents the reference operating model.
+
+What-if scenarios may inherit from the baseline or another scenario.
+
+Example:
 
 ```text
-WAITING_TIME_LEAKAGE_RATE
-SEASONALITY_FACTOR
-DEMAND_GROWTH_RATE
-NO_SHOW_RATE
+BASELINE
+   ├── NEW_CLINIC
+   ├── ADD_DOCTORS
+   └── INCREASE_NFZ_CONTRACT
 ```
 
 ---
 
-## 13.3 SCENARIO_RESOURCE_CHANGE
+## 13.2 SCENARIO_RESOURCE_CHANGE
 
 ### Purpose
 
-Represents a simulated resource change introduced by a scenario.
+Represents a simulated change in resources under a scenario.
 
 ### Grain
 
-One resource change within one scenario.
+One record per scenario resource change.
 
 ### Primary Key
 
@@ -1848,81 +1672,84 @@ scenario_resource_change_id
 ```text
 scenario_id
 clinic_id
-specialty_id
 doctor_id
 room_id
-service_type_id
 ```
 
 ### Attributes
 
-```text
-resource_type
-change_type
-quantity
-effective_date
-```
+| Field                       | Description                          |
+| --------------------------- | ------------------------------------ |
+| scenario_resource_change_id | Unique change                        |
+| scenario_id                 | Scenario                             |
+| clinic_id                   | Affected clinic                      |
+| resource_type               | DOCTOR, DOCTOR_HOURS, ROOM, CAPACITY |
+| doctor_id                   | Doctor, if applicable                |
+| room_id                     | Room, if applicable                  |
+| quantity_change             | Change amount                        |
+| effective_from              | Effective date                       |
+| effective_to                | Optional end date                    |
 
-### Resource Types
+### Business Rules
 
-```text
-DOCTOR
-DOCTOR_HOURS
-ROOM
-EQUIPMENT
-NFZ_CAPACITY
-OPERATIONAL_CAPACITY
-```
+`SCENARIO_RESOURCE_CHANGE` represents a **simulation configuration or scenario assumption**.
 
-### Change Types
+It is different from:
 
 ```text
-ADD
-REMOVE
-REALLOCATE
-INCREASE
-DECREASE
+RESOURCE_REALLOCATION
 ```
+
+which represents an operational event in the simulated organization.
 
 ---
 
-# 14. Business Rules and Parameter Entities
+# 14. Patient Behavior
 
 ## 14.1 PATIENT_BEHAVIOR_RULE
 
 ### Purpose
 
-Stores configurable patient leakage assumptions.
+Defines configurable probabilistic patient behavior in response to waiting time.
 
 ### Grain
 
-One waiting-time interval and associated behavioral probability.
+One record per waiting-time interval and behavior rule version.
 
 ### Primary Key
 
 ```text
-patient_behavior_rule_id
-```
-
-### Foreign Keys
-
-```text
-scenario_id
+behavior_rule_id
 ```
 
 ### Attributes
 
+| Field                 | Description             |
+| --------------------- | ----------------------- |
+| behavior_rule_id      | Unique rule             |
+| waiting_time_min_days | Minimum waiting time    |
+| waiting_time_max_days | Maximum waiting time    |
+| probability_wait      | Probability of WAIT     |
+| probability_external  | Probability of EXTERNAL |
+| probability_drop      | Probability of DROP     |
+| effective_from        | Rule start              |
+| effective_to          | Rule end                |
+
+### Business Rules
+
+The probabilities must satisfy:
+
 ```text
-min_waiting_days
-max_waiting_days
-external_probability
-drop_probability
-wait_probability
-effective_from
-effective_to
+probability_wait
++
+probability_external
++
+probability_drop
+=
+1
 ```
 
-### Example Configuration
+Example configurable assumptions:
 
 ```text
 0–7 days       → 5% leakage
@@ -1933,134 +1760,13 @@ effective_to
 180+ days      → 75%
 ```
 
-### Important Rule
+These are synthetic simulation assumptions and not real-world clinical statistics.
 
-These values are simulation assumptions.
-
-They are configurable parameters and are not intended to represent real-world clinical statistics.
+The parameters must be configurable without changing generator logic.
 
 ---
 
-# 15. Derived Metrics
-
-The following metrics should generally be calculated from source entities.
-
-## 15.1 Waiting Time
-
-```text
-Appointment Start
--
-Queue Entry
-```
-
----
-
-## 15.2 Effective Capacity
-
-```text
-MIN(
-    Operational Capacity,
-    NFZ Funded Capacity
-)
-```
-
----
-
-## 15.3 Capacity Utilization
-
-```text
-Delivered Services
-/
-Effective Capacity
-```
-
----
-
-## 15.4 Operational Utilization
-
-```text
-Delivered Services
-/
-Operational Capacity
-```
-
----
-
-## 15.5 NFZ Contract Utilization
-
-```text
-Delivered Funded Services
-/
-Contracted Services
-```
-
----
-
-## 15.6 Remaining Contract Capacity
-
-```text
-Contracted Volume
--
-Delivered Funded Services
-```
-
----
-
-## 15.7 Internal Capture Rate
-
-```text
-Internal Referrals
-/
-Total Referrals
-```
-
----
-
-## 15.8 External Leakage Rate
-
-```text
-External Referrals
-/
-Total Referrals
-```
-
----
-
-## 15.9 Referral Non-Completion Rate
-
-```text
-Not Completed Referrals
-/
-Total Referrals
-```
-
----
-
-## 15.10 Clinic Revenue
-
-Conceptually:
-
-```text
-Total Service Revenue
--
-Doctor Compensation
-```
-
-The exact financial implementation may be extended to include other direct revenue allocations.
-
----
-
-## 15.11 Net Clinic Result
-
-```text
-Clinic Revenue
--
-Operating Costs
-```
-
----
-
-# 16. Core Entity Relationships
+# 15. Core Entity Relationships
 
 The primary operational flow is:
 
@@ -2069,45 +1775,24 @@ PATIENT
     ↓
 PATIENT_VISIT
     ↓
+DEMAND_EVENT
+    ↓
 REFERRAL
     ↓
-SPECIALTY
+PATIENT_DECISION
     ↓
-    ├── Available
-    │       ↓
-    │   CAPACITY
-    │       ↓
-    │   WAITING_LIST_ENTRY
-    │       ↓
-    │   PATIENT_DECISION
-    │       ├── WAIT
-    │       ├── EXTERNAL
-    │       └── DROP
-    │
-    └── Not Available
-            ↓
-        EXTERNAL
-```
-
-Internal service flow:
-
-```text
 WAITING_LIST_ENTRY
-        ↓
+    ↓
 APPOINTMENT
-        ↓
+    ↓
 VISIT
-        ↓
+    ↓
 SERVICE_DELIVERY
-        ↓
+    ↓
 REVENUE_TRANSACTION
-        ↓
-DOCTOR_COMPENSATION_TRANSACTION
-        ↓
-CLINIC FINANCIAL RESULT
 ```
 
-Capacity flow:
+The capacity flow is:
 
 ```text
 DOCTOR
@@ -2119,161 +1804,113 @@ ROOM
 ROOM_SCHEDULE
     +
 SERVICE_TYPE
-        ↓
-OPERATIONAL_CAPACITY
-        +
+    ↓
+OPERATIONAL CAPACITY
+    ↓
 NFZ_CONTRACT
-        ↓
-NFZ_FUNDED_CAPACITY
-        ↓
-EFFECTIVE_CAPACITY
-        ↓
-WAITING_TIME
-        ↓
-PATIENT_DECISION
+    ↓
+NFZ FUNDED CAPACITY
+    ↓
+EFFECTIVE CAPACITY
 ```
 
-Strategic flow:
+The availability flow is:
 
 ```text
+SPECIALTY
+    ↓
+CLINIC_SPECIALTY
+    ↓
+CLINIC
+```
+
+The financial flow is:
+
+```text
+SERVICE_DELIVERY
+       ↓
+SERVICE_PRICING
+       ↓
+REVENUE_TRANSACTION
+       ↓
+GROSS SERVICE REVENUE
+       ↓
+COMPENSATION_RULE
+       ↓
+DOCTOR_COMPENSATION_TRANSACTION
+       ↓
+CLINIC REVENUE
+       ↓
+OPERATING_COST
+       ↓
+NET CLINIC RESULT
+```
+
+The scenario flow is:
+
+```text
+BASELINE SCENARIO
+       ↓
 SCENARIO
-    ↓
-SCENARIO_PARAMETER
-    +
+       ↓
 SCENARIO_RESOURCE_CHANGE
-    ↓
-Changed Resources / Capacity
-    ↓
-Demand Fulfillment
-    ↓
-Waiting Time
-    ↓
-Leakage
-    ↓
-Service Delivery
-    ↓
-Revenue
-    ↓
-Costs
-    ↓
-Net Result
+       ↓
+CAPACITY / DEMAND / FINANCIAL IMPACT
 ```
 
----
-
-# 17. Source-of-Truth Rules
-
-The following rules define which entity is the source of truth for major concepts.
-
-| Concept                     | Source of Truth                 |
-| --------------------------- | ------------------------------- |
-| Patient                     | PATIENT                         |
-| Clinic                      | CLINIC                          |
-| Specialty                   | SPECIALTY                       |
-| Doctor                      | DOCTOR                          |
-| Doctor-Clinic Relationship  | DOCTOR_CLINIC_ASSIGNMENT        |
-| Room                        | ROOM                            |
-| Service Definition          | SERVICE_TYPE                    |
-| Doctor Availability         | DOCTOR_SCHEDULE                 |
-| Room Availability           | ROOM_SCHEDULE                   |
-| Demand                      | DEMAND_EVENT                    |
-| Primary/Pediatric Encounter | PATIENT_VISIT                   |
-| Referral                    | REFERRAL                        |
-| Patient Decision            | PATIENT_DECISION                |
-| Waiting Episode             | WAITING_LIST_ENTRY              |
-| Scheduled Care              | APPOINTMENT                     |
-| Actual Attendance           | VISIT                           |
-| Delivered Service           | SERVICE_DELIVERY                |
-| Physical Capacity           | CAPACITY_FACT                   |
-| NFZ Contract                | NFZ_CONTRACT                    |
-| Contract Change             | NFZ_CONTRACT_AMENDMENT          |
-| Resource Movement           | RESOURCE_REALLOCATION           |
-| Service Revenue             | REVENUE_TRANSACTION             |
-| Compensation Logic          | COMPENSATION_RULE               |
-| Compensation Cost           | DOCTOR_COMPENSATION_TRANSACTION |
-| Cost Classification         | COST_CATEGORY                   |
-| Operating Cost              | OPERATING_COST                  |
-| Scenario                    | SCENARIO                        |
-| Scenario Parameters         | SCENARIO_PARAMETER              |
-| Scenario Resource Changes   | SCENARIO_RESOURCE_CHANGE        |
-| Patient Leakage Assumptions | PATIENT_BEHAVIOR_RULE           |
-| Calendar                    | DATE_DIMENSION                  |
-
----
-
-# 18. Important Modeling Boundaries
-
-The following distinctions must be preserved.
-
-## 18.1 Demand vs Service Delivery
+The operational reallocation flow is:
 
 ```text
-DEMAND_EVENT
-≠
-SERVICE_DELIVERY
+RESOURCE_REALLOCATION
+       ↓
+POST-REALLOCATION RESOURCE STATE
+       ↓
+FUTURE CAPACITY
+       ↓
+WAITING TIME
+       ↓
+PATIENT BEHAVIOR
+       ↓
+SERVICE DELIVERY
 ```
-
-Demand represents required or requested care.
-
-Service delivery represents care actually provided.
 
 ---
 
-## 18.2 Appointment vs Visit
+# 16. Key Derived Metrics
+
+The following values should generally be derived rather than stored as independent transactional entities.
+
+## 16.1 Internal Capture Rate
 
 ```text
-APPOINTMENT
-≠
-VISIT
+Internal Capture Rate
+=
+Internal Referrals
+/
+Total Referrals
 ```
 
-Appointment is scheduled.
-
-Visit is actual attendance.
-
----
-
-## 18.3 Visit vs Service Delivery
+## 16.2 External Leakage Rate
 
 ```text
-VISIT
-≠
-SERVICE_DELIVERY
+External Leakage Rate
+=
+External Referrals
+/
+Total Referrals
 ```
 
-A visit represents attendance.
-
-Service delivery represents the actual healthcare service used for operational and financial accounting.
-
----
-
-## 18.4 Referral Status vs Referral Destination
+## 16.3 Referral Non-Completion Rate
 
 ```text
-referral_status
-≠
-destination_type
+Non-Completion Rate
+=
+Not Completed Referrals
+/
+Total Referrals
 ```
 
-These represent different dimensions of the referral lifecycle.
-
----
-
-## 18.5 Operational Capacity vs NFZ Capacity
-
-```text
-Operational Capacity
-≠
-NFZ Funded Capacity
-```
-
-Operational capacity is physically constrained.
-
-NFZ capacity is contractually constrained.
-
----
-
-## 18.6 Effective Capacity
+## 16.4 Effective Capacity
 
 ```text
 Effective Capacity
@@ -2284,153 +1921,294 @@ MIN(
 )
 ```
 
-Effective capacity is derived.
-
----
-
-## 18.7 Business Rules vs Transactions
+## 16.5 Contract Utilization
 
 ```text
-COMPENSATION_RULE
-≠
-DOCTOR_COMPENSATION_TRANSACTION
+Contract Utilization
+=
+Delivered Funded Services
+/
+Contracted Services
 ```
 
-The rule defines how compensation is calculated.
-
-The transaction represents the resulting financial cost.
-
----
-
-## 18.8 Baseline vs Scenario
+## 16.6 Remaining Contract Capacity
 
 ```text
-BASELINE DATA
-must remain immutable.
-
-SCENARIO DATA
-represents simulated changes.
+Remaining Contract Capacity
+=
+Contracted Volume
+-
+Delivered Funded Services
 ```
 
-Scenario analysis must not overwrite the baseline model.
+## 16.7 Clinic Revenue
+
+```text
+Clinic Revenue
+=
+Gross Service Revenue
+-
+Doctor Compensation
+```
+
+## 16.8 Net Clinic Result
+
+```text
+Net Clinic Result
+=
+Clinic Revenue
+-
+Operating Costs
+```
 
 ---
 
-# 19. Recommended Implementation Layers
+# 17. Critical Business Constraints
 
-The logical model can be implemented in the following layers.
+The following constraints must be respected by the data generator and later database implementation.
+
+## 17.1 Appointment Conflicts
+
+A doctor cannot have overlapping appointments.
+
+A room cannot have overlapping appointments.
+
+---
+
+## 17.2 Referral Outcome
+
+Each completed referral pathway must ultimately resolve to one of:
 
 ```text
-DIMENSIONS
-    ↓
-PATIENT
-CLINIC
+INTERNAL
+EXTERNAL
+NOT_COMPLETED
+```
+
+---
+
+## 17.3 Specialty Availability
+
+Internal specialty availability must be determined using the applicable `CLINIC_SPECIALTY` record for the relevant date.
+
+---
+
+## 17.4 Capacity
+
+```text
+Effective Capacity
+≤ Operational Capacity
+```
+
+and:
+
+```text
+Effective Capacity
+≤ NFZ Funded Capacity
+```
+
+---
+
+## 17.5 Contract Volume
+
+Delivered funded services should be traceable to the applicable NFZ contract and contractual period.
+
+---
+
+## 17.6 Pricing
+
+Each revenue-generating service must use the pricing rule applicable to:
+
+```text
+Service Type
++
+Payer Type
++
+Service Date
+```
+
+---
+
+## 17.7 Compensation
+
+The compensation transaction must reference the compensation rule applicable to the doctor and service date.
+
+---
+
+## 17.8 Patient Behavior
+
+Behavior probabilities must sum to:
+
+```text
+1.0
+```
+
+for every active behavior rule.
+
+---
+
+## 17.9 Scenario Separation
+
+Scenario configuration must not overwrite baseline data.
+
+Baseline and What-if scenarios must remain analytically distinguishable.
+
+---
+
+# 18. Entity Dependency Overview
+
+```text
 SPECIALTY
-DOCTOR
-ROOM
-SERVICE_TYPE
-DATE_DIMENSION
-COST_CATEGORY
+    │
+    └── CLINIC_SPECIALTY ── CLINIC
+                              │
+                              ├── DOCTOR
+                              │     │
+                              │     ├── DOCTOR_SCHEDULE
+                              │     └── COMPENSATION_RULE
+                              │
+                              ├── ROOM
+                              │     └── ROOM_SCHEDULE
+                              │
+                              ├── NFZ_CONTRACT
+                              │     └── NFZ_CONTRACT_AMENDMENT
+                              │
+                              └── CAPACITY_FACT
 
-OPERATIONAL EVENTS
-    ↓
-PATIENT_VISIT
-DEMAND_EVENT
-REFERRAL
-PATIENT_DECISION
-APPOINTMENT
-VISIT
+PATIENT
+    │
+    ├── PATIENT_VISIT
+    │       └── REFERRAL
+    │              ├── PATIENT_DECISION
+    │              └── WAITING_LIST_ENTRY
+    │                       └── APPOINTMENT
+    │                              └── VISIT
+    │                                   └── SERVICE_DELIVERY
+    │                                          ├── SERVICE_PRICING
+    │                                          └── REVENUE_TRANSACTION
+    │
+    └── DEMAND_EVENT
+
+
 SERVICE_DELIVERY
+    │
+    ├── REVENUE_TRANSACTION
+    │
+    └── DOCTOR_COMPENSATION_TRANSACTION
+               │
+               └── COMPENSATION_RULE
 
-OPERATIONAL STATE
-    ↓
-WAITING_LIST_ENTRY
-DOCTOR_SCHEDULE
-ROOM_SCHEDULE
 
-CAPACITY & CONTRACT
-    ↓
-CAPACITY_FACT
-NFZ_CONTRACT
-NFZ_CONTRACT_AMENDMENT
-
-FINANCE
-    ↓
-REVENUE_TRANSACTION
-COMPENSATION_RULE
-DOCTOR_COMPENSATION_TRANSACTION
-OPERATING_COST
-
-STRATEGY & SIMULATION
-    ↓
 SCENARIO
-SCENARIO_PARAMETER
+    │
+    ├── SCENARIO_RESOURCE_CHANGE
+    ├── RESOURCE_REALLOCATION
+    ├── CAPACITY_FACT
+    ├── DEMAND_EVENT
+    ├── NFZ_CONTRACT_AMENDMENT
+    └── OPERATING_COST
+```
+
+---
+
+# 19. V1.2 Change Summary
+
+Version `1.2` introduces the following key modeling changes.
+
+### Added
+
+```text
+CLINIC_SPECIALTY
+SERVICE_PRICING
+REFERRAL.final_outcome
+NFZ_CONTRACT.volume_period
+NFZ_CONTRACT ↔ CAPACITY_FACT relationship
+SCENARIO.parent_scenario_id
+RESOURCE_REALLOCATION.source_quantity
+RESOURCE_REALLOCATION.target_quantity
+OPERATING_COST.cost_period_start
+OPERATING_COST.cost_period_end
+```
+
+### Changed
+
+```text
+SPECIALTY.available_internally
+```
+
+was removed from the conceptual model.
+
+Internal availability is now represented by:
+
+```text
+CLINIC_SPECIALTY
+```
+
+Referral lifecycle and referral outcome are explicitly separated:
+
+```text
+referral_status
+        +
+final_outcome
+```
+
+Scenario changes and operational resource reallocations are explicitly separated:
+
+```text
 SCENARIO_RESOURCE_CHANGE
-PATIENT_BEHAVIOR_RULE
+        ≠
 RESOURCE_REALLOCATION
 ```
 
----
-
-# 20. Entity Dictionary v1.1 Scope
-
-Version 1.1 resolves the main modeling gaps identified during the audit of the Business Rules.
-
-The model now explicitly distinguishes:
-
-* master data,
-* operational events,
-* operational state,
-* business rules,
-* contracts,
-* capacity,
-* financial transactions,
-* scenario configuration,
-* and derived metrics.
-
-The most important design decisions are:
+Pricing is now explicitly modeled:
 
 ```text
-1. Demand is modeled as patient-level events.
-
-2. Waiting list is modeled as a patient referral episode.
-
-3. Waiting time is a derived metric.
-
-4. Referral status and destination are separate attributes.
-
-5. Appointment, Visit, and Service Delivery are separate concepts.
-
-6. Operational Capacity and NFZ Funded Capacity are separate concepts.
-
-7. Effective Capacity is derived.
-
-8. NFZ Contract and Contract Amendment are separate entities.
-
-9. Compensation Rules and Compensation Transactions are separate entities.
-
-10. Baseline data is immutable relative to scenarios.
-
-11. Date Dimension supports all temporal analysis.
-
-12. Capacity Fact is aggregated at:
-    Date × Clinic × Specialty × Service Type.
-
-13. Delivered services are sourced from SERVICE_DELIVERY.
-
-14. Financial transactions are traceable back to delivered services.
-
-15. Patient behavior assumptions are configurable.
+SERVICE_TYPE
+    ↓
+SERVICE_PRICING
+    ↓
+SERVICE_DELIVERY
+    ↓
+REVENUE_TRANSACTION
 ```
 
-This version is intended to serve as the logical foundation for:
+NFZ contractual capacity is explicitly connected to the capacity fact:
+
+```text
+NFZ_CONTRACT
+    ↓
+CAPACITY_FACT
+```
+
+---
+
+# 20. Version Status
+
+**Version:** 1.2
+
+**Status:** Logical model — ready for Process Flow design
+
+**Next document:**
 
 ```text
 05_Process_Flows.md
-        ↓
-06_ERD.md
-        ↓
-07_Generator_Architecture.md
 ```
 
-The next design step should validate the relationships and cardinalities between these entities before implementation begins.
+The next stage should define the chronological and causal processes connecting the entities described in this document.
+
+The recommended process flows are:
+
+1. Patient Entry and Demand Generation
+2. Primary Care Visit and Referral Generation
+3. Referral Routing and Specialty Availability
+4. Waiting List and Capacity Management
+5. Patient Leakage and Drop-off
+6. Appointment Scheduling
+7. Service Delivery
+8. NFZ Contract Utilization
+9. Revenue and Doctor Compensation
+10. Resource Reallocation
+11. NFZ Contract Amendment
+12. Scenario / What-if Simulation
+
+The Process Flow document should be validated against this Entity Dictionary before the ERD is created.
